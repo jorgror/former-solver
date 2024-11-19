@@ -82,7 +82,7 @@ func RandomMultithread(grid *game.Grid, params RandomParams) {
 
 func solveRandomRecursive(grid *game.Grid, steps int, stop int) int {
 	if steps >= stop {
-		return steps
+		return stop + 1
 	}
 	clusters := grid.GetClusters()
 	numClusters := len(clusters)
