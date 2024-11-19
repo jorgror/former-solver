@@ -1,6 +1,8 @@
 package game
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"math/rand"
 )
@@ -207,4 +209,14 @@ func PrintActions(actions []Action) {
 	for i, action := range actions {
 		fmt.Printf("Step %2d x: %d, y: %d %s\n", i+1, action.X, action.Y, action.Color.Icon())
 	}
+}
+
+func (g *Grid) HashGrid() string {
+	hasher := sha256.New()
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			hasher.Write([]byte{byte(g.cells[y][x].color)})
+		}
+	}
+	return hex.EncodeToString(hasher.Sum(nil))
 }

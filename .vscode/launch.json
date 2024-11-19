@@ -21,7 +21,7 @@
       "mode": "auto",
       "program": "${workspaceFolder}/cli/solve/main.go",
       "console": "integratedTerminal",
-      "args": ["20241118", "beam", "10", "5", "3", "50", "average"],
+      "args": ["20241118", "infinite", "20", "3"],
       "cwd": "${workspaceFolder}"
     }
   ]

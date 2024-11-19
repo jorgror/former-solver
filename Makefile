@@ -10,7 +10,7 @@ play: make-play
 	./bin/play 20241118
 
 solve: make-solve
-	./bin/solve 20241118 beam 30 20 3 50 average
+	./bin/solve 20241118 infinite 20 20
 
 test:
 	go test ./...

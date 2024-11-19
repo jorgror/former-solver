@@ -31,6 +31,9 @@ func main() {
 	case "beam":
 		beamParams := solver.ArgsToBeamParams(os.Args[3:])
 		solver.Beam(grid, beamParams)
+	case "infinite":
+		infiniteParams := solver.ArgsToInfiniteParams(os.Args[3:])
+		solver.Infinite(grid, infiniteParams)
 	default:
 		fmt.Println("Unknown solver")
 	}
