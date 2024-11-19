@@ -2,6 +2,7 @@ package solver
 
 import (
 	"fmt"
+	"runtime"
 	"sort"
 	"strconv"
 	"sync"
@@ -57,6 +58,18 @@ func ArgsToInfiniteParams(args []string) InfiniteParams {
 	return InfiniteParams{Cutoff: cutoff, CacheDepth: cacheDepth}
 }
 
+type Task struct {
+	grid     *game.Grid
+	clusters []game.Cluster
+	actions  []int
+}
+
+var (
+	taskQueue = make(chan Task, 100)
+)
+
+var bestLock sync.Mutex
+
 func Infinite(grid *game.Grid, params InfiniteParams) {
 
 	allTimeBest := params.Cutoff
@@ -70,20 +83,34 @@ func Infinite(grid *game.Grid, params InfiniteParams) {
 
 	actions := []int{}
 
-	CreateInfiniteTasks(level, maxWidth, &allTimeBest, actions, grid, clusters)
+	numWorkers := runtime.NumCPU()
+	var wg sync.WaitGroup
+	wg.Add(numWorkers)
+	for i := 0; i < numWorkers; i++ {
+		go func() {
+			defer wg.Done()
+			for task := range taskQueue {
+				solveInfiniteRecursive(task.grid, task.clusters, task.actions, &allTimeBest)
+			}
+		}()
+	}
 
+	go func() {
+		CreateInfiniteTasks(level, maxWidth, &allTimeBest, actions, grid, clusters)
+		close(taskQueue)
+	}()
+
+	wg.Wait()
 }
 
 func CreateInfiniteTasks(level int, maxWidth int, allTimeBest *int, actions []int, grid *game.Grid, clusters []game.Cluster) {
 
 	for i := 0; i < maxWidth-level; i++ {
 		if level > *allTimeBest-1 {
-			solvedGrid, score := solveInfiniteRecursive(grid, clusters, actions, *allTimeBest)
-			if score < *allTimeBest {
-				*allTimeBest = score
-				fmt.Printf("Best: %d\n", *allTimeBest)
-				solvedGrid.PrintMoves()
-			}
+			taskQueue <- Task{
+				grid:     grid,
+				clusters: clusters,
+				actions:  actions}
 		} else {
 			actions = append([]int{i}, actions...)
 			CreateInfiniteTasks(level+1, maxWidth, allTimeBest, actions, grid, clusters)
@@ -96,23 +123,30 @@ type NextGrid struct {
 	clusters []game.Cluster
 }
 
-func solveInfiniteRecursive(grid *game.Grid, clusters []game.Cluster, actions []int, best int) (*game.Grid, int) {
-	if grid.GetNumActions() >= best {
-		return grid, best
+func solveInfiniteRecursive(grid *game.Grid, clusters []game.Cluster, actions []int, best *int) {
+	if grid.GetNumActions() >= *best {
+		return
 	}
 
 	lenClusters := len(clusters)
 
 	if lenClusters == 0 {
-		return grid, grid.GetNumActions()
+		bestLock.Lock()
+		if grid.GetNumActions() < *best {
+			*best = grid.GetNumActions()
+			fmt.Printf("New best: %d\n", *best)
+			grid.PrintMoves()
+		}
+		bestLock.Unlock()
+		return
 	}
 
 	if len(actions) == 0 {
-		return grid, best
+		return
 	}
 
 	if actions[0] >= lenClusters {
-		return grid, best
+		return
 	}
 
 	uniqueColors := make(map[game.Color]struct{})
@@ -122,7 +156,7 @@ func solveInfiniteRecursive(grid *game.Grid, clusters []game.Cluster, actions []
 	numUniqueColors := len(uniqueColors)
 
 	if numUniqueColors > len(actions) {
-		return grid, best
+		return
 	}
 
 	nextGrids := GetNextGrids(grid, clusters)
@@ -132,5 +166,5 @@ func solveInfiniteRecursive(grid *game.Grid, clusters []game.Cluster, actions []
 	})
 
 	action := actions[0]
-	return solveInfiniteRecursive(nextGrids[action].grid, nextGrids[action].clusters, actions[1:], best)
+	solveInfiniteRecursive(nextGrids[action].grid, nextGrids[action].clusters, actions[1:], best)
 }
