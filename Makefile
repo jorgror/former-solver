@@ -7,10 +7,10 @@ make-solve:
 	go build -o bin/solve cli/solve/main.go
 
 play: make-play
-	./bin/play 20241118
+	./bin/play 20241120
 
 solve: make-solve
-	./bin/solve 20241118 infinite 20 20
+	./bin/solve 20241201 infinite 20 3
 
 test:
 	go test ./...

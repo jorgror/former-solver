@@ -2,13 +2,20 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
+
+	"net/http"
+	_ "net/http/pprof"
 
 	"github.com/jorgror/former-solver/game"
 	"github.com/jorgror/former-solver/solver"
 )
 
 func main() {
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
 
 	if len(os.Args) < 4 {
 		fmt.Println("Usage: solve <input file> solver solver_param")

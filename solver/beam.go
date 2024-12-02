@@ -143,8 +143,8 @@ func Beam(grid *game.Grid, params BeamParams) {
 		})
 
 		toKeep := numBeams
-		if numBeams > params.KeepNumber {
-			toKeep = params.KeepNumber
+		if numBeams > params.KeepNumber*(i+1) {
+			toKeep = params.KeepNumber * (i + 1)
 		}
 
 		for _, res := range beamResults {

@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/jorgror/former-solver/game"
 )
@@ -22,10 +23,11 @@ func GetNextGrids(grid *game.Grid, clusters []game.Cluster) []*NextGrid {
 	gridHash := ""
 	if numActions <= cacheDepth {
 		cacheLock.Lock()
-		defer cacheLock.Unlock()
 
 		gridHash = grid.HashGrid()
-		if cachedResult, found := cache[gridHash]; found {
+		cachedResult, found := cache[gridHash]
+		cacheLock.Unlock()
+		if found {
 			return cachedResult
 		}
 	}
@@ -35,11 +37,17 @@ func GetNextGrids(grid *game.Grid, clusters []game.Cluster) []*NextGrid {
 		gridCopy := grid.Clone()
 		gridCopy.ClearRegion(clusters[i].X, clusters[i].Y)
 		clusters := gridCopy.GetClusters()
-		nextGrids = append(nextGrids, &NextGrid{grid: gridCopy, clusters: clusters})
+		score := ScoringFunc(gridCopy, clusters)
+		nextGrids = append(nextGrids, &NextGrid{grid: gridCopy, clusters: clusters, score: score})
 	}
+	sort.Slice(nextGrids, func(i, j int) bool {
+		return nextGrids[i].score < nextGrids[j].score
+	})
 
 	if numActions <= cacheDepth {
+		cacheLock.Lock()
 		cache[gridHash] = nextGrids
+		cacheLock.Unlock()
 	}
 	return nextGrids
 }
@@ -76,14 +84,9 @@ func Infinite(grid *game.Grid, params InfiniteParams) {
 
 	cacheDepth = params.CacheDepth
 
-	clusters := grid.GetClusters()
-	maxWidth := len(clusters)
-
-	level := 0
-
-	actions := []int{}
-
 	numWorkers := runtime.NumCPU()
+
+	lastTime = time.Now()
 	var wg sync.WaitGroup
 	wg.Add(numWorkers)
 	for i := 0; i < numWorkers; i++ {
@@ -91,29 +94,95 @@ func Infinite(grid *game.Grid, params InfiniteParams) {
 			defer wg.Done()
 			for task := range taskQueue {
 				solveInfiniteRecursive(task.grid, task.clusters, task.actions, &allTimeBest)
+				LogTasks(task.actions)
 			}
 		}()
 	}
 
 	go func() {
-		CreateInfiniteTasks(level, maxWidth, &allTimeBest, actions, grid, clusters)
+		InfiniteTaskController(grid, &allTimeBest)
 		close(taskQueue)
 	}()
 
 	wg.Wait()
 }
 
-func CreateInfiniteTasks(level int, maxWidth int, allTimeBest *int, actions []int, grid *game.Grid, clusters []game.Cluster) {
+var (
+	store   [20][40]int
+	counter int = 0
+)
 
-	for i := 0; i < maxWidth-level; i++ {
-		if level > *allTimeBest-1 {
+var lastTime time.Time
+
+func LogTasks(actions []int) {
+	// for i, action := range actions {
+	// 	store[i][action]++
+	// }
+	counter++
+
+	if counter%100000 == 0 {
+		interval := time.Since(lastTime)
+		rate := float64(100000) / interval.Seconds()
+		fmt.Printf("Counter: %d Rate: %.0f / sec\n", counter, rate)
+		lastTime = time.Now()
+		// for i := 0; i < 20; i++ {
+		// 	for j := 0; j < 30; j++ {
+		// 		if store[i][j] > 0 {
+		// 			fmt.Printf("%d ", store[i][j])
+		// 		}
+		// 	}
+		// 	fmt.Println()
+		// }
+	}
+}
+
+type RunPlan struct {
+	FullLevels  int
+	SearchWidth int
+}
+
+func InfiniteTaskController(grid *game.Grid, allTimeBest *int) {
+
+	runPlan := []RunPlan{
+		{FullLevels: 1, SearchWidth: 1},
+		{FullLevels: 2, SearchWidth: 1},
+		{FullLevels: 3, SearchWidth: 1},
+		{FullLevels: 3, SearchWidth: 3},
+		{FullLevels: 4, SearchWidth: 1},
+		{FullLevels: 4, SearchWidth: 3},
+		{FullLevels: 5, SearchWidth: 1},
+		{FullLevels: 4, SearchWidth: 3},
+	}
+
+	clusters := grid.GetClusters()
+	maxWidth := len(clusters)
+
+	for _, plan := range runPlan {
+		actions := make([]int, 0)
+		fmt.Println("Running plan:", plan)
+		CreateInfiniteTasks(0, maxWidth, allTimeBest, actions, grid, clusters, plan.FullLevels, plan.SearchWidth)
+	}
+}
+
+func CreateInfiniteTasks(level int, maxWidth int, allTimeBest *int, actions []int, grid *game.Grid, clusters []game.Cluster, fullLevels int, searchWidth int) {
+
+	width := maxWidth
+	if *allTimeBest-level-1 > fullLevels {
+		width = searchWidth
+	}
+
+	for i := 0; i < width; i++ {
+		actionsCopy := make([]int, len(actions))
+		copy(actionsCopy, actions)
+		actionsCopy = append([]int{i}, actionsCopy...)
+
+		if level > *allTimeBest-2 {
 			taskQueue <- Task{
 				grid:     grid,
 				clusters: clusters,
-				actions:  actions}
+				actions:  actionsCopy}
 		} else {
-			actions = append([]int{i}, actions...)
-			CreateInfiniteTasks(level+1, maxWidth, allTimeBest, actions, grid, clusters)
+			CreateInfiniteTasks(level+1, maxWidth, allTimeBest, actionsCopy, grid, clusters, fullLevels, searchWidth)
 		}
 	}
 }
@@ -121,6 +190,7 @@ func CreateInfiniteTasks(level int, maxWidth int, allTimeBest *int, actions []in
 type NextGrid struct {
 	grid     *game.Grid
 	clusters []game.Cluster
+	score    int
 }
 
 func solveInfiniteRecursive(grid *game.Grid, clusters []game.Cluster, actions []int, best *int) {
@@ -161,10 +231,25 @@ func solveInfiniteRecursive(grid *game.Grid, clusters []game.Cluster, actions []
 
 	nextGrids := GetNextGrids(grid, clusters)
 
-	sort.Slice(nextGrids, func(i, j int) bool {
-		return len(nextGrids[i].clusters) < len(nextGrids[j].clusters)
-	})
-
 	action := actions[0]
 	solveInfiniteRecursive(nextGrids[action].grid, nextGrids[action].clusters, actions[1:], best)
+}
+
+func ScoringFunc(grid *game.Grid, clusters []game.Cluster) int {
+	score := len(clusters)
+	colors := make([]int, 4)
+	for _, cluster := range clusters {
+		colors[cluster.Color]++
+	}
+
+	sort.Slice(colors, func(i, j int) bool {
+		return colors[i] < colors[j]
+	})
+
+	score += colors[0] * 2
+	score += colors[1] * 1
+	score -= colors[2] * 1
+	score -= colors[3] * 2
+
+	return score
 }
